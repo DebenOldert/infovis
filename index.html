@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en" style="height: 100%;">
+<head>
+    <meta charset="UTF-8">
+    <title>Info Vis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js" integrity="sha512-rKFvwjvE4liWPlFnvH4ZhRDfNZ9FOpdkD/BU5gAIA3VS3vOQrQ5BjKgbO3kxebKhHdHcNUHLqxQYSoxee9UwgA==" crossorigin="anonymous"></script>
+    <script src="echarts.js"></script>
+</head>
+<body style="padding: 0; height: 100%;">
+<div style="height: 100%; width: 100%;" id="graph">
+</div>
+</body>
+<script>
+let test_data = [
+    {
+        id: "1",
+        name: "cats",
+        value: 10,
+        category: "cat",
+        symbolSize: 5,
+    },
+    {
+        id: "2",
+        name: "cattaps",
+        value: 5,
+        category: "cat",
+        symbolSize: 5,
+    },
+    {
+        id: "3",
+        name: "catswhoyell",
+        value: 1,
+        category: "cat",
+        symbolSize: 5,
+    }
+]
+
+let test_links = [
+    {
+        source: "1",
+        target: "2"
+    },
+    {
+        source: "1",
+        target: "3"
+    },
+    {
+        source: "2",
+        target: "3"
+    }
+]
+
+
+let options = {
+    title: {
+        text: "linking subreddits",
+    },
+    tooltip: {},
+    series: [{
+        type: "graph",
+        name: "subreddits",
+        data: test_data,
+        links: test_links,
+        categories: ["cat"],
+        roam: true,
+        layout: "force",
+        force: {
+            repulsion: 100
+        }
+    }]
+}
+document.networkGraph = echarts.init(document.getElementById("graph"))
+document.networkGraph.setOption(options);
+</script>
+</html>
