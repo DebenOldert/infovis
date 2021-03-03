@@ -65,6 +65,8 @@ Papa.parse("/data/body_smoll.csv", {
                 text: "linking subreddits",
             },
             tooltip: {},
+            animationDurationUpdate: 1500,
+            animationEasingUpdate: 'quinticInOut',
             series: [{
                 type: "graph",
                 name: "subreddits",
@@ -75,7 +77,14 @@ Papa.parse("/data/body_smoll.csv", {
                 layout: "force",
                 force: {
                     repulsion: 1000
-                }
+                },
+                emphasis: {
+                    focus: 'adjacency',
+                    label: {
+                        position: 'right',
+                        show: true
+                    }
+                },
             }]
         }
         console.log(options);
