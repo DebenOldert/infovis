@@ -11,6 +11,80 @@
 </div>
 </body>
 <script>
+
+var raw_data = {}
+var links = []
+let data = []
+
+
+Papa.parse("/data/body_smoll.csv", {
+    download: true,
+    header: true,
+    step: function (row){
+        console.log(row);
+        let source = row.data["SOURCE_SUBREDDIT"];
+        let dest = row.data["TARGET_SUBREDDIT"];
+
+        if(!(source in raw_data)){
+            raw_data[source] = {
+                id: source,
+                name: source,
+                value: 0,
+                category: 'source',
+                symbolSize: 0
+            }
+        }
+        if(!(dest in raw_data)){
+            raw_data[dest] = {
+                id: dest,
+                name: dest,
+                value: 0,
+                category: 'destination',
+                symbolSize: 0
+            }
+        }
+
+        raw_data[source].value++;
+        raw_data[source].symbolSize++;
+
+        raw_data[dest].value++;
+        raw_data[dest].symbolSize++;
+
+        links.push({
+            source: source,
+            target: dest
+        })
+    },
+    complete: function () {
+        console.log('CSV completely loaded')
+        for(let node in raw_data){
+            data.push(raw_data[node])
+        }
+        let options = {
+            title: {
+                text: "linking subreddits",
+            },
+            tooltip: {},
+            series: [{
+                type: "graph",
+                name: "subreddits",
+                data: data,
+                links: links,
+                categories: ["source", "destination"],
+                roam: true,
+                layout: "force",
+                force: {
+                    repulsion: 1000
+                }
+            }]
+        }
+        console.log(options);
+        document.networkGraph = echarts.init(document.getElementById("graph"))
+        document.networkGraph.setOption(options);
+    }
+})
+
+
 let test_data = [
     {
         id: "1",
@@ -51,25 +125,26 @@ let test_links = [
 ]
 
 
-let options = {
-    title: {
-        text: "linking subreddits",
-    },
-    tooltip: {},
-    series: [{
-        type: "graph",
-        name: "subreddits",
-        data: test_data,
-        links: test_links,
-        categories: ["cat"],
-        roam: true,
-        layout: "force",
-        force: {
-            repulsion: 100
-        }
-    }]
-}
-document.networkGraph = echarts.init(document.getElementById("graph"))
-document.networkGraph.setOption(options);
+// let options = {
+//     title: {
+//         text: "linking subreddits",
+//     },
+//     tooltip: {},
+//     series: [{
+//         type: "graph",
+//         name: "subreddits",
+//         data: data,
+//         links: links,
+//         categories: ["source", "destination"],
+//         roam: true,
+//         layout: "force",
+//         force: {
+//             repulsion: 100
+//         }
+//     }]
+// }
+// console.log(options);
+// document.networkGraph = echarts.init(document.getElementById("graph"))
+// document.networkGraph.setOption(options);
 </script>
 </html>
