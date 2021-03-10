@@ -6,22 +6,31 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js" integrity="sha512-rKFvwjvE4liWPlFnvH4ZhRDfNZ9FOpdkD/BU5gAIA3VS3vOQrQ5BjKgbO3kxebKhHdHcNUHLqxQYSoxee9UwgA==" crossorigin="anonymous"></script>
     <script src="echarts.js"></script>
 </head>
-<body style="padding: 0; height: 100%;">
-<div style="height: 100%; width: 100%;" id="graph">
+<body style="padding: 0; height: 100%; width: 100%">
+<div style="position: relative; height: 100%; width: 100%">
+    <div style="height: 100%; width: 50%; position: absolute; top:0; left:0;" id="graph"></div>
+    <div id="charts" style="height: 100%; width: 50%; position: absolute; right: 0; top: 0;">
+        <div id="link" style="width: 100%; height: 50%;"></div>
+        <div id="sentiment" style="width: 100%; height: 50%"></div>
+    </div>
 </div>
+
 </body>
 <script>
-
 var raw_data = {}
 var links = []
 let data = []
+let rows = []
 
 
 Papa.parse("/data/body_smoll.csv", {
     download: true,
     header: true,
     step: function (row){
-        console.log(row);
+        row.data['id'] = row.meta.cursor;
+
+        rows.push(row.data);
+
         let source = row.data["SOURCE_SUBREDDIT"];
         let dest = row.data["TARGET_SUBREDDIT"];
 
@@ -45,10 +54,10 @@ Papa.parse("/data/body_smoll.csv", {
         }
 
         raw_data[source].value++;
-        raw_data[source].symbolSize++;
+        raw_data[source].symbolSize += 0.1;
 
         raw_data[dest].value++;
-        raw_data[dest].symbolSize++;
+        raw_data[dest].symbolSize += 0.1;
 
         links.push({
             source: source,
@@ -56,104 +65,249 @@ Papa.parse("/data/body_smoll.csv", {
         })
     },
     complete: function () {
-        console.log('CSV completely loaded')
-        for(let node in raw_data){
+        console.log('CSV completely loaded');
+        createGraph();
+        createLinkBar();
+        createSentimentBar();
+        console.log(rows[10]);
+    }
+});
+
+function createGraph(){
+    for(let node in raw_data){
+        if(raw_data[node]['value'] >= 5){
             data.push(raw_data[node])
         }
-        let options = {
-            title: {
-                text: "linking subreddits",
+
+    }
+    let options = {
+        title: {
+            text: "linking subreddits",
+        },
+        tooltip: {},
+        animationDurationUpdate: 1500,
+        animationEasingUpdate: 'quinticInOut',
+        series: [{
+            type: "graph",
+            name: "subreddits",
+            data: data,
+            links: links,
+            categories: ["source", "destination"],
+            roam: true,
+            layout: "force",
+            force: {
+                repulsion: 1000
             },
-            tooltip: {},
-            animationDurationUpdate: 1500,
-            animationEasingUpdate: 'quinticInOut',
-            series: [{
-                type: "graph",
-                name: "subreddits",
-                data: data,
-                links: links,
-                categories: ["source", "destination"],
-                roam: true,
-                layout: "force",
-                force: {
-                    repulsion: 1000
-                },
-                emphasis: {
-                    focus: 'adjacency',
-                    label: {
-                        position: 'right',
-                        show: true
-                    }
-                },
-            }]
+            emphasis: {
+                focus: 'adjacency',
+                label: {
+                    position: 'right',
+                    show: true
+                }
+            },
+        }]
+    }
+    console.log(options);
+    document.networkGraph = echarts.init(document.getElementById("graph"))
+    document.networkGraph.setOption(options);
+
+    document.networkGraph.on('click', {dataType: 'node'}, updateLinkBar);
+    document.networkGraph.on('click', {dataType: 'edge'}, updateSentimentBar);
+}
+
+function createLinkBar(){
+    document.linkChart = echarts.init(document.getElementById("link"))
+    let option = {
+        title: {
+            text: "How is this node linked?",
+            subtext: "Clink on a node to view its links"
+        },
+        yAxis: {
+            type: "value"
+        },
+        xAxis: {
+            type: "category",
+            splitNumber: 1
+        },
+        legend: {
+            data: ["Outgoing links", "Incoming links"]
+        },
+        tooltip: {
+            show: true
+        },
+        series: [
+            {
+                type: "bar",
+                name: "Outgoing links",
+                data: [],
+                stack: "sub"
+            },
+            {
+                type: "bar",
+                name: "Incoming links",
+                data: [],
+                stack: "sub"
+            }
+        ]
+    };
+    document.linkChart.setOption(option);
+    document.linkChart.on("click", "series", updateSentimentBar);
+}
+
+function updateLinkBar(params){
+    console.log(`Clicked on ${params.name}`);
+
+    let baseSub = params.name;
+    let subs = {};
+
+    for(let i=0; i<links.length; i++){
+        let link = links[i];
+
+        if(link.target === baseSub || link.source === baseSub){
+            let sub = (link.target === baseSub) ? link.source:link.target;
+            if(!(sub in subs)) {
+                subs[sub] = {
+
+                    outgoing: 0,
+                    incoming: 0
+                }
+            }
+
+            if(link.target === sub){
+                // Outgoing link
+                subs[sub].outgoing++;
+            }
+            else{
+                // Incoming link
+                subs[sub].incoming++;
+            }
         }
-        console.log(options);
-        document.networkGraph = echarts.init(document.getElementById("graph"))
-        document.networkGraph.setOption(options);
     }
-})
 
+    let option = document.linkChart.getOption();
 
-let test_data = [
-    {
-        id: "1",
-        name: "cats",
-        value: 10,
-        category: "cat",
-        symbolSize: 5,
-    },
-    {
-        id: "2",
-        name: "cattaps",
-        value: 5,
-        category: "cat",
-        symbolSize: 5,
-    },
-    {
-        id: "3",
-        name: "catswhoyell",
-        value: 1,
-        category: "cat",
-        symbolSize: 5,
+    option.title[0].subtext = `Showing links for ${baseSub}`;
+
+    let cat = [];
+    let incoming = [];
+    let outgoing = [];
+    for(const sub in subs){
+        cat.push(sub);
+        let link = subs[sub];
+        incoming.push([sub, link.incoming * -1, baseSub]);
+        outgoing.push([sub, link.outgoing, baseSub]);
     }
-]
 
-let test_links = [
-    {
-        source: "1",
-        target: "2"
-    },
-    {
-        source: "1",
-        target: "3"
-    },
-    {
-        source: "2",
-        target: "3"
+    option.xAxis.data = cat;
+    option.series[0].data = outgoing;
+    option.series[1].data = incoming;
+
+    document.linkChart.setOption(option);
+
+
+}
+
+function createSentimentBar(){
+    document.sentimentChart = echarts.init(document.getElementById("sentiment"))
+    let option = {
+        title: {
+            text: "What is the sentiment between subs?",
+            subtext: "Click on a link to show its sentiments"
+        },
+        yAxis: {
+            type: "value"
+        },
+        xAxis: {
+            type: "category",
+            splitNumber: 1
+        },
+        legend: {
+            show: true,
+        },
+        tooltip: {
+            show: true
+        },
+        series: [
+            {
+                type: "bar",
+                name: "Sentiment",
+                data: [],
+            }
+        ]
+    };
+    document.sentimentChart.setOption(option);
+}
+function updateSentimentBar(params){
+    console.log(params);
+
+    let source = "";
+    let target = "";
+
+    if(params.componentSubType === "graph"){
+        source = params.data.source;
+        target = params.data.target;
     }
-]
+    else{
+        if(params.data[1] > 0){
+            source = params.data[2];
+            target = params.data[0];
+        }
+        else{
+            source = params.data[0];
+            target = params.data[2];
+        }
+    }
 
+    console.log(`Showing sentiment from ${source} to ${target}`);
 
-// let options = {
-//     title: {
-//         text: "linking subreddits",
-//     },
-//     tooltip: {},
-//     series: [{
-//         type: "graph",
-//         name: "subreddits",
-//         data: data,
-//         links: links,
-//         categories: ["source", "destination"],
-//         roam: true,
-//         layout: "force",
-//         force: {
-//             repulsion: 100
-//         }
-//     }]
-// }
-// console.log(options);
-// document.networkGraph = echarts.init(document.getElementById("graph"))
-// document.networkGraph.setOption(options);
+    let comb_data = {};
+
+    for(let i=0; i<rows.length; i++){
+        const row = rows[i];
+
+        if (row["SOURCE_SUBREDDIT"] === source && row["TARGET_SUBREDDIT"] === target){
+            // We can use this link
+            //Only use LIWC columns
+            let cols = Object.keys(row);
+            for(let col of cols){
+                if(col.startsWith("LIWC_")){
+                    let fmt = col.replace("LIWC_", "")
+                    if(!(fmt in comb_data)){
+                        comb_data[fmt] = []
+                    }
+
+                    comb_data[fmt].push(parseFloat(row[col]))
+                }
+            }
+
+        }
+    }
+
+    let data = [];
+    let cat = [];
+
+    for(let sentiment in comb_data){
+        cat.push(sentiment);
+        let sum = 0;
+        for(let i=0; i<comb_data[sentiment].length; i++){
+            sum += comb_data[sentiment][i];
+        }
+
+        let avg = sum / comb_data[sentiment].length
+
+        data.push([sentiment, avg])
+    }
+
+    console.log(data, cat);
+
+    let option = document.sentimentChart.getOption();
+
+    option.title[0].subtext = `Showing sentiment from ${source} to ${target}`;
+
+    option.series[0].data = data;
+    option.xAxis.data = cat;
+    document.sentimentChart.setOption(option);
+
+}
 </script>
 </html>
