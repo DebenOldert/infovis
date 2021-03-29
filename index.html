@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <title>Info Vis</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js" integrity="sha512-rKFvwjvE4liWPlFnvH4ZhRDfNZ9FOpdkD/BU5gAIA3VS3vOQrQ5BjKgbO3kxebKhHdHcNUHLqxQYSoxee9UwgA==" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
     <script src="echarts.js"></script>
 </head>
 <body style="padding: 0; height: 100%; width: 100%">
+<button style="position: fixed; left: 10px; bottom: 10px; width: 100px; z-index: 9" onclick="reset()">Reset view</button>
 <div style="position: relative; height: 100%; width: 100%">
     <div style="height: 100%; width: 50%; position: absolute; top:0; left:0;" id="graph"></div>
     <div id="charts" style="height: 100%; width: 50%; position: absolute; right: 0; top: 0;">
@@ -14,14 +16,32 @@
         <div id="sentiment" style="width: 100%; height: 50%"></div>
     </div>
 </div>
+<div id="legend" style="position: fixed; bottom: 10px; left: 120px; height: 20px; z-index: 9">
+
+</div>
 
 </body>
 <script>
-var raw_data = {}
-var links = []
-let data = []
-let rows = []
+var raw_data = {};
+var links = [];
+let data = [];
+let rows = [];
 
+let sentiment_colors = {
+    sad: "#0000ff",
+    anger: "#ff0000",
+    swear: "#ff0066",
+    past: "#666699",
+    present: "#99ccff",
+    future: "#ccffff",
+    posemo: "#ccff99",
+    negemo: "#ff6666",
+    affect: "#006600",
+    social: "#cc9900",
+    nonflu: "#660066",
+    assent: "#663300",
+    dissent: "#666633",
+}
 
 Papa.parse("/data/body_smoll.csv", {
     download: true,
@@ -30,9 +50,120 @@ Papa.parse("/data/body_smoll.csv", {
         row.data['id'] = row.meta.cursor;
 
         rows.push(row.data);
+    },
+    complete: function () {
+        console.log('CSV completely loaded');
+        createGraph();
+        createLinkBar();
+        createSentimentBar();
 
-        let source = row.data["SOURCE_SUBREDDIT"];
-        let dest = row.data["TARGET_SUBREDDIT"];
+        updateGraph();
+
+        for(let sent in sentiment_colors){
+            let item = $("<span><span></span><span></span></span>");
+            console.log(sent, item);
+            item.css({
+                height: "20px",
+                margin: "0 5px"
+            });
+            item.find("span").first().css({
+                height: "20px",
+                width: "20px",
+                backgroundColor: sentiment_colors[sent],
+                display: "inline-block",
+                marginRight: "5px",
+                borderRadius: "5px",
+                verticalAlign: "middle"
+            });
+            item.find("span").last().css({
+                verticalAlign: "middle"
+            });
+            item.find("span").last().text(sent);
+
+            $("#legend").append(item);
+        }
+    }
+});
+
+function reset(){
+    updateGraph();
+
+    let linkOption = document.linkChart.getOption();
+    linkOption.series[0].data = [];
+    linkOption.series[1].data = [];
+    document.linkChart.setOption(linkOption);
+
+
+    let sentimentOption = document.sentimentChart.getOption();
+    sentimentOption.series[0].data = [];
+    document.sentimentChart.setOption(sentimentOption);
+}
+
+function createGraph(){
+    let options = {
+        title: {
+            text: "linking subreddits",
+        },
+        tooltip: {},
+        animationDurationUpdate: 1500,
+        animationEasingUpdate: 'quinticInOut',
+        series: [{
+            type: "graph",
+            name: "subreddits",
+            data: [],
+            links: [],
+            categories: ["source", "destination"],
+            roam: true,
+            layout: "force",
+            force: {
+                repulsion: 1000
+            },
+            emphasis: {
+                focus: 'adjacency',
+                label: {
+                    position: 'right',
+                    show: true
+                }
+            },
+        }]
+    }
+    document.networkGraph = echarts.init(document.getElementById("graph"))
+    document.networkGraph.setOption(options);
+
+    document.networkGraph.on('click', {dataType: 'node'}, updateLinkBar);
+    document.networkGraph.on('click', {dataType: 'edge'}, updateSentimentBar);
+}
+
+function updateGraph(params=null){
+    console.log(params);
+    let tbl = [];
+    if(params === null){
+        tbl = rows;
+    }
+    else{
+        console.log(params);
+        let _rows = [];
+
+        for(let row of rows) {
+            let source = row["SOURCE_SUBREDDIT"];
+            let dest = row["TARGET_SUBREDDIT"];
+
+            if (params.value[2][0] == source && row['LIWC_' + params.value[0]] > 0) {
+                _rows.push(row);
+            }
+        }
+        tbl = _rows;
+    }
+
+    console.log(tbl);
+
+    let data = [];
+    let links = [];
+    let raw_data = {};
+
+    for(let row of tbl){
+        let source = row["SOURCE_SUBREDDIT"];
+        let dest = row["TARGET_SUBREDDIT"];
 
         if(!(source in raw_data)){
             raw_data[source] = {
@@ -59,60 +190,67 @@ Papa.parse("/data/body_smoll.csv", {
         raw_data[dest].value++;
         raw_data[dest].symbolSize += 0.1;
 
+        let keys = Object.keys(row);
+        let values = Object.values(row);
+
+        let max = -Infinity;
+        let top_sentiment = null;
+
+        for(let i=0; i<keys.length; i++){
+            if(keys[i].startsWith("LIWC_")){
+                if(values[i] > max){
+                    max = values[i];
+                    top_sentiment = keys[i];
+                }
+            }
+        }
+        let color = "grey";
+        if(top_sentiment != null){
+            color = sentiment_colors[top_sentiment.replace("LIWC_", "").toLowerCase()]
+        }
+
+
         links.push({
             source: source,
-            target: dest
-        })
-    },
-    complete: function () {
-        console.log('CSV completely loaded');
-        createGraph();
-        createLinkBar();
-        createSentimentBar();
-        console.log(rows[10]);
-    }
-});
+            target: dest,
+            lineStyle: {
+                color: color
+            }
+        });
 
-function createGraph(){
+    }
+
     for(let node in raw_data){
-        if(raw_data[node]['value'] >= 5){
+        let value = raw_data[node].value;
+        if(value > 0){
+
+            raw_data[node].symbolSize = 2 * Math.log2(value) + 2
             data.push(raw_data[node])
         }
 
     }
-    let options = {
-        title: {
-            text: "linking subreddits",
-        },
-        tooltip: {},
-        animationDurationUpdate: 1500,
-        animationEasingUpdate: 'quinticInOut',
-        series: [{
-            type: "graph",
-            name: "subreddits",
-            data: data,
-            links: links,
-            categories: ["source", "destination"],
-            roam: true,
-            layout: "force",
-            force: {
-                repulsion: 1000
-            },
-            emphasis: {
-                focus: 'adjacency',
-                label: {
-                    position: 'right',
-                    show: true
-                }
-            },
-        }]
-    }
-    console.log(options);
-    document.networkGraph = echarts.init(document.getElementById("graph"))
-    document.networkGraph.setOption(options);
 
-    document.networkGraph.on('click', {dataType: 'node'}, updateLinkBar);
-    document.networkGraph.on('click', {dataType: 'edge'}, updateSentimentBar);
+    //console.log(raw_data, data, links);
+
+    let option = document.networkGraph.getOption();
+
+    option.series[0].data = data;
+    option.series[0].links = links;
+
+    document.networkGraph.setOption(option);
+
+}
+
+function selectGraph(params){
+    console.log(`Selecting ${params.data[0]}`)
+    console.log(params);
+
+    document.networkGraph.dispatchAction({
+        action: "select",
+        seriesIndex: 0,
+        name: params.value[0]
+    })
+
 }
 
 function createLinkBar(){
@@ -127,7 +265,14 @@ function createLinkBar(){
         },
         xAxis: {
             type: "category",
-            splitNumber: 1
+            splitNumber: 1,
+            axisLabel: {
+                interval: 0,
+                rotate: 90,
+            },
+            axisTick: {
+                alignWithLabel: true
+            }
         },
         legend: {
             data: ["Outgoing links", "Incoming links"]
@@ -152,6 +297,7 @@ function createLinkBar(){
     };
     document.linkChart.setOption(option);
     document.linkChart.on("click", "series", updateSentimentBar);
+    document.linkChart.on("click", "series", selectGraph);
 }
 
 function updateLinkBar(params){
@@ -160,14 +306,16 @@ function updateLinkBar(params){
     let baseSub = params.name;
     let subs = {};
 
-    for(let i=0; i<links.length; i++){
-        let link = links[i];
+    for(let i=0; i<rows.length; i++){
+        let link = {
+            source: rows[i]["SOURCE_SUBREDDIT"],
+            target: rows[i]["TARGET_SUBREDDIT"],
+        };
 
         if(link.target === baseSub || link.source === baseSub){
             let sub = (link.target === baseSub) ? link.source:link.target;
             if(!(sub in subs)) {
                 subs[sub] = {
-
                     outgoing: 0,
                     incoming: 0
                 }
@@ -194,8 +342,8 @@ function updateLinkBar(params){
     for(const sub in subs){
         cat.push(sub);
         let link = subs[sub];
-        incoming.push([sub, link.incoming * -1, baseSub]);
-        outgoing.push([sub, link.outgoing, baseSub]);
+        incoming.push([sub, link.incoming, baseSub]);
+        outgoing.push([sub, link.outgoing * -1, baseSub]);
     }
 
     option.xAxis.data = cat;
@@ -219,7 +367,15 @@ function createSentimentBar(){
         },
         xAxis: {
             type: "category",
-            splitNumber: 1
+            splitNumber: 1,
+            interval: 0,
+            axisLabel: {
+                interval: 0,
+                rotate: 90,
+            },
+            axisTick: {
+                alignWithLabel: true
+            }
         },
         legend: {
             show: true,
@@ -236,10 +392,10 @@ function createSentimentBar(){
         ]
     };
     document.sentimentChart.setOption(option);
+
+    document.sentimentChart.on('click', "series", updateGraph)
 }
 function updateSentimentBar(params){
-    console.log(params);
-
     let source = "";
     let target = "";
 
@@ -248,13 +404,13 @@ function updateSentimentBar(params){
         target = params.data.target;
     }
     else{
-        if(params.data[1] > 0){
-            source = params.data[2];
-            target = params.data[0];
+        if(params.value[1] < 0){
+            source = params.value[2];
+            target = params.value[0];
         }
         else{
-            source = params.data[0];
-            target = params.data[2];
+            source = params.value[0];
+            target = params.value[2];
         }
     }
 
@@ -267,7 +423,7 @@ function updateSentimentBar(params){
 
         if (row["SOURCE_SUBREDDIT"] === source && row["TARGET_SUBREDDIT"] === target){
             // We can use this link
-            //Only use LIWC columns
+            // Only use LIWC columns
             let cols = Object.keys(row);
             for(let col of cols){
                 if(col.startsWith("LIWC_")){
@@ -295,10 +451,16 @@ function updateSentimentBar(params){
 
         let avg = sum / comb_data[sentiment].length
 
-        data.push([sentiment, avg])
-    }
+        data.push({
+            name: sentiment,
+            value: [sentiment, avg, [source, target]],
+            itemStyle: {
+                color: sentiment_colors[sentiment.toLowerCase()]
+            }
+        })
 
-    console.log(data, cat);
+        //data.push([sentiment, avg, [source, target]])
+    }
 
     let option = document.sentimentChart.getOption();
 
