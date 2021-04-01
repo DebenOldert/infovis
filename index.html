@@ -16,8 +16,14 @@
     </style>
 </head>
 <body style="padding: 0; height: 100%; width: 100%">
+
+<!-- Instruction button -->
 <button style="position: fixed; left: 10px; bottom: 30px; width: 100px; z-index: 9" onclick="$('#modal').fadeIn()">Show instructions</button>
+
+<!-- Reset button -->
 <button style="position: fixed; left: 10px; bottom: 10px; width: 100px; z-index: 9" onclick="reset()">Reset view</button>
+
+<!-- Charts -->
 <div style="position: relative; height: 100%; width: 100%">
     <div style="height: 100%; width: 50%; position: absolute; top:0; left:0;" id="graph"></div>
     <div id="charts" style="height: 100%; width: 50%; position: absolute; right: 0; top: 0;">
@@ -25,7 +31,11 @@
         <div id="sentiment" style="width: 100%; height: 50%"></div>
     </div>
 </div>
+
+<!-- Legend -->
 <div id="legend" style="position: fixed; bottom: 10px; left: 120px; height: 20px; z-index: 9"></div>
+
+<!-- Modal instruction overlay -->
 <div id="modal" style="background-color: rgba(0, 0, 0, 0.4); position: fixed; height: 100%; width: 100%; z-index: 10; top: 0; left: 0;">
     <button onclick="$('#modal').fadeOut()" style="width: 100px; height: 20px; position: absolute; top: 50%; left: 50%; margin-top: -10px; margin-left: -50px;">Close instructions</button>
     <div style="position: absolute; left: 20%; top: 40%">
@@ -54,6 +64,7 @@ var links = [];
 let data = [];
 let rows = [];
 
+// List of colors for each sentiment
 let sentiment_colors = {
     sad: "#0000ff",
     anger: "#ff0000",
@@ -70,22 +81,27 @@ let sentiment_colors = {
     "disagreeing": "#666633",
 }
 
+// Download the CSV file to frontend using papaParse
 Papa.parse("/csv.php?lines=2000", {
     download: true,
     header: true,
     step: function (row){
+        // Set row ID to cursor number for each row
         row.data['id'] = row.meta.cursor;
-
         rows.push(row.data);
     },
     complete: function () {
+        // Execute when CSV completely loaded
         console.log('CSV completely loaded');
+
+        // Initialize charts
         createGraph();
         createLinkBar();
         createSentimentBar();
 
         updateGraph();
 
+        // Create the legend using the colors defined above
         for(let sent in sentiment_colors){
             let item = $("<span><span></span><span></span></span>");
             item.css({
@@ -111,20 +127,23 @@ Papa.parse("/csv.php?lines=2000", {
     }
 });
 
+// Called to reset the multiview
 function reset(){
     updateGraph();
 
+    // Remove any data in the link chart
     let linkOption = document.linkChart.getOption();
     linkOption.series[0].data = [];
     linkOption.series[1].data = [];
     document.linkChart.setOption(linkOption);
 
-
+    // Remove ant data in the sentiment chart
     let sentimentOption = document.sentimentChart.getOption();
     sentimentOption.series[0].data = [];
     document.sentimentChart.setOption(sentimentOption);
 }
 
+// Initialize the graph
 function createGraph(){
     let options = {
         title: {
@@ -157,16 +176,20 @@ function createGraph(){
     document.networkGraph = echarts.init(document.getElementById("graph"))
     document.networkGraph.setOption(options);
 
+    // Add events to the graph
     document.networkGraph.on('click', {dataType: 'node'}, updateLinkBar);
     document.networkGraph.on('click', {dataType: 'edge'}, updateSentimentBar);
 }
 
+// Update the data in the graph
 function updateGraph(params=null){
     let tbl = [];
+    // If no params given, use all the rows in the set
     if(params === null){
         tbl = rows;
     }
     else{
+        // Only use the rows with the source node given in params and where its sentiment value is > 0
         let _rows = [];
 
         for(let row of rows) {
@@ -184,6 +207,7 @@ function updateGraph(params=null){
     let links = [];
     let raw_data = {};
 
+    // Create the datastructure for the graph
     for(let row of tbl){
         let source = row["SOURCE_SUBREDDIT"];
         let dest = row["TARGET_SUBREDDIT"];
@@ -207,6 +231,7 @@ function updateGraph(params=null){
             }
         }
 
+        // Increment values for each time a link occurs
         raw_data[source].value++;
         raw_data[source].symbolSize += 0.1;
 
@@ -221,6 +246,8 @@ function updateGraph(params=null){
         let max = -Infinity;
         let top_sentiment = null;
 
+        // Each link, calculate what average sentiment is highest
+        // Prepare for average calculation here
         for(let i=0; i<keys.length; i++){
             if(keys[i].startsWith("LIWC_")){
                 if(!(keys[i] in avgs)){
@@ -230,6 +257,7 @@ function updateGraph(params=null){
             }
         }
 
+        // Actually calculate the average here and update the max value if the average for this sentiment is larger than another
         for(let sent in avgs){
             let total = avgs[sent].reduce((a, b) => a + b, 0)
             if(avgs[sent].length > 0){
@@ -241,12 +269,14 @@ function updateGraph(params=null){
             }
         }
 
+
+        // Set the color of a link based on the largest average sentiment
         let color = "grey";
         if(top_sentiment != null){
             color = sentiment_colors[top_sentiment.replace("LIWC_", "").toLowerCase()]
         }
 
-
+        // Push the link to the data structure
         links.push({
             source: source,
             target: dest,
@@ -257,18 +287,18 @@ function updateGraph(params=null){
 
     }
 
+    // Push each node to the data structure
     for(let node in raw_data){
         let value = raw_data[node].value;
         if(value > 0){
-
+            // Algorithm to calculate node size: s = 2 * log(v) + 2 where s is node size and v is value (number of links)
             raw_data[node].symbolSize = 2 * Math.log2(value) + 2
             data.push(raw_data[node])
         }
 
     }
 
-    //console.log(raw_data, data, links);
-
+    // Push the data structure to the graph
     let option = document.networkGraph.getOption();
 
     option.series[0].data = data;
@@ -278,6 +308,7 @@ function updateGraph(params=null){
 
 }
 
+// Trigger a select in the graph when called in an interaction event
 function selectGraph(params){
     console.log(`Selecting ${params.data[0]}`)
 
@@ -289,7 +320,9 @@ function selectGraph(params){
 
 }
 
+// Initialize the link chart
 function createLinkBar(){
+    // Create the base data structure
     document.linkChart = echarts.init(document.getElementById("link"))
     let option = {
         title: {
@@ -331,11 +364,15 @@ function createLinkBar(){
             }
         ]
     };
+    // Push base structure to chart instance
     document.linkChart.setOption(option);
+
+    // Add events to chart
     document.linkChart.on("click", "series", updateSentimentBar);
     document.linkChart.on("click", "series", selectGraph);
 
     document.linkChart.on("mouseover", "series", function (params) {
+        // When hovering over series, highlight the serie in the graph
         document.networkGraph.dispatchAction({
             type: "highlight",
             name: params.name
@@ -343,18 +380,21 @@ function createLinkBar(){
     })
 }
 
+// Update the displayed links in the chart
 function updateLinkBar(params){
     console.log(`Clicked on ${params.name}`);
 
     let baseSub = params.name;
     let subs = {};
 
+    //Select which row contains the link we clicked as a source or destination
     for(let i=0; i<rows.length; i++){
         let link = {
             source: rows[i]["SOURCE_SUBREDDIT"],
             target: rows[i]["TARGET_SUBREDDIT"],
         };
 
+        // Count how much a link has been made
         if(link.target === baseSub || link.source === baseSub){
             let sub = (link.target === baseSub) ? link.source:link.target;
             if(!(sub in subs)) {
@@ -375,10 +415,14 @@ function updateLinkBar(params){
         }
     }
 
+    // Get the base data structure
     let option = document.linkChart.getOption();
 
+    // Change title of chart
     option.title[0].subtext = `Showing links for ${baseSub}`;
 
+    // For each subreddit set the link count, direction and where the link is coming from/going too
+    // Negative link count? => outgoing link | Positive link count? => incoming link
     let cat = [];
     let incoming = [];
     let outgoing = [];
@@ -389,17 +433,19 @@ function updateLinkBar(params){
         outgoing.push([sub, link.outgoing * -1, baseSub]);
     }
 
+    // Set data in the structure
     option.xAxis.data = cat;
     option.series[0].data = outgoing;
     option.series[1].data = incoming;
 
+    // Push data structure to chart
     document.linkChart.setOption(option);
-
-
 }
 
+// Initialize sentiment chart
 function createSentimentBar(){
     document.sentimentChart = echarts.init(document.getElementById("sentiment"))
+    // Set base structure
     let option = {
         title: {
             text: "What is the sentiment between subs?",
@@ -436,30 +482,37 @@ function createSentimentBar(){
     };
     document.sentimentChart.setOption(option);
 
+    // Set interaction events for the sentiment chart
     document.sentimentChart.on('click', "series", updateGraph);
-
     document.sentimentChart.on("mouseover", "series", function (params) {
-        console.log(params);
+        // WHen hovering series in the sentiment chart, highlight it in the graph
         document.networkGraph.dispatchAction({
             type: "highlight",
             name: params.value[2][0]
         })
     })
 }
+
+// Updata data for the sentiment chart
 function updateSentimentBar(params){
     let source = "";
     let target = "";
 
+    // Get different values from different events, handle it here
     if(params.componentSubType === "graph"){
+        // Click in the graph
         source = params.data.source;
         target = params.data.target;
     }
     else{
+        // Click in the link chart
         if(params.value[1] < 0){
+            // Link was outgoing
             source = params.value[2];
             target = params.value[0];
         }
         else{
+            // Link was incoming
             source = params.value[0];
             target = params.value[2];
         }
@@ -469,9 +522,11 @@ function updateSentimentBar(params){
 
     let comb_data = {};
 
+    // Get the sentiment for each of these exact links in the dataset
     for(let i=0; i<rows.length; i++){
         const row = rows[i];
 
+        // Check if the is the exact link
         if (row["SOURCE_SUBREDDIT"] === source && row["TARGET_SUBREDDIT"] === target){
             // We can use this link
             // Only use LIWC columns
@@ -482,7 +537,7 @@ function updateSentimentBar(params){
                     if(!(fmt in comb_data)){
                         comb_data[fmt] = []
                     }
-
+                    // Store the sentiment value in the sentiment object
                     comb_data[fmt].push(parseFloat(row[col]))
                 }
             }
@@ -494,6 +549,7 @@ function updateSentimentBar(params){
     let cat = [];
 
     for(let sentiment in comb_data){
+        // Calculate the average for each sentiment, data from array of all sentiment values for link, created above
         cat.push(sentiment);
         let sum = 0;
         for(let i=0; i<comb_data[sentiment].length; i++){
@@ -501,7 +557,7 @@ function updateSentimentBar(params){
         }
 
         let avg = sum / comb_data[sentiment].length
-
+        // Push the calculated average for a sentiment to an array, already in the correct structure for the chart
         data.push({
             name: sentiment,
             value: [sentiment, avg, [source, target]],
@@ -513,20 +569,23 @@ function updateSentimentBar(params){
         //data.push([sentiment, avg, [source, target]])
     }
 
-    // Sort data
-
+    // Function to sort the series in chart from high to low, while keeping it prepared structure
     let compare = function(a, b){
         if(a.value[1] > b.value[1]) return -1;
         else if(a.value[1] < b.value[1]) return 1;
         else return 0;
     }
 
+    // Perform the sort function
     data = data.sort(compare);
 
+    // Get the base data structure
     let option = document.sentimentChart.getOption();
 
+    // Update chart subtitle
     option.title[0].subtext = `Showing sentiment from ${source} to ${target}`;
 
+    //Push data to chart
     option.series[0].data = data;
     option.xAxis.data = cat;
     document.sentimentChart.setOption(option);
