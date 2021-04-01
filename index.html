@@ -6,8 +6,17 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js" integrity="sha512-rKFvwjvE4liWPlFnvH4ZhRDfNZ9FOpdkD/BU5gAIA3VS3vOQrQ5BjKgbO3kxebKhHdHcNUHLqxQYSoxee9UwgA==" crossorigin="anonymous"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
     <script src="echarts.js"></script>
+    <style>
+        #modal > div {
+            background-color: white;
+            border: 2px solid black;
+            border-radius: 5px;
+            padding: 5px;
+        }
+    </style>
 </head>
 <body style="padding: 0; height: 100%; width: 100%">
+<button style="position: fixed; left: 10px; bottom: 30px; width: 100px; z-index: 9" onclick="$('#modal').fadeIn()">Show instructions</button>
 <button style="position: fixed; left: 10px; bottom: 10px; width: 100px; z-index: 9" onclick="reset()">Reset view</button>
 <div style="position: relative; height: 100%; width: 100%">
     <div style="height: 100%; width: 50%; position: absolute; top:0; left:0;" id="graph"></div>
@@ -16,10 +25,28 @@
         <div id="sentiment" style="width: 100%; height: 50%"></div>
     </div>
 </div>
-<div id="legend" style="position: fixed; bottom: 10px; left: 120px; height: 20px; z-index: 9">
-
+<div id="legend" style="position: fixed; bottom: 10px; left: 120px; height: 20px; z-index: 9"></div>
+<div id="modal" style="background-color: rgba(0, 0, 0, 0.4); position: fixed; height: 100%; width: 100%; z-index: 10; top: 0; left: 0;">
+    <button onclick="$('#modal').fadeOut()" style="width: 100px; height: 20px; position: absolute; top: 50%; left: 50%; margin-top: -10px; margin-left: -50px;">Close instructions</button>
+    <div style="position: absolute; left: 20%; top: 40%">
+        Click on a node to view it's links to other subreddits.<br>
+        Click on an edge to view that edge's average sentiment.<br>
+        Hover over a node or edge to highlight connected nodes.<br>
+        You can also zoom in and out get a better view.
+    </div>
+    <div style="position: absolute; right: 20%; top: 20%">
+        Once you clicked on a node in the graph, the bar chart here will show<br>
+        you the links to other subreddits and the direction of the links.<br>
+        Hover over a link to highlight it in the graph. <br>
+        Click on a link to show its sentiment below.
+    </div>
+    <div style="position: absolute; right: 20%; bottom: 20%">
+        Once you clicked on an edge in the graph or bar in the link chart above,<br>
+        the bar chart here will show you the sentiment of the links coming from one subreddit to another.<br>
+        Click on a sentiment to focus the graph on only links coming from the subreddit with the selected sentiment score > 0.<br>
+        Click the <i>reset view</i> button on the bottom left to reset the focus.
+    </div>
 </div>
-
 </body>
 <script>
 var raw_data = {};
@@ -34,16 +61,16 @@ let sentiment_colors = {
     past: "#666699",
     present: "#99ccff",
     future: "#ccffff",
-    posemo: "#ccff99",
-    negemo: "#ff6666",
-    affect: "#006600",
+    "positive emotion": "#ccff99",
+    "negative emotion": "#ff6666",
+    "affection": "#006600",
     social: "#cc9900",
-    nonflu: "#660066",
-    assent: "#663300",
-    dissent: "#666633",
+    "non-fluent": "#660066",
+    "agreeing": "#663300",
+    "disagreeing": "#666633",
 }
 
-Papa.parse("/data/body_smoll.csv", {
+Papa.parse("/csv.php?lines=2000", {
     download: true,
     header: true,
     step: function (row){
@@ -61,7 +88,6 @@ Papa.parse("/data/body_smoll.csv", {
 
         for(let sent in sentiment_colors){
             let item = $("<span><span></span><span></span></span>");
-            console.log(sent, item);
             item.css({
                 height: "20px",
                 margin: "0 5px"
@@ -125,6 +151,7 @@ function createGraph(){
                     show: true
                 }
             },
+            selectedMode: true
         }]
     }
     document.networkGraph = echarts.init(document.getElementById("graph"))
@@ -135,13 +162,11 @@ function createGraph(){
 }
 
 function updateGraph(params=null){
-    console.log(params);
     let tbl = [];
     if(params === null){
         tbl = rows;
     }
     else{
-        console.log(params);
         let _rows = [];
 
         for(let row of rows) {
@@ -154,8 +179,6 @@ function updateGraph(params=null){
         }
         tbl = _rows;
     }
-
-    console.log(tbl);
 
     let data = [];
     let links = [];
@@ -193,17 +216,31 @@ function updateGraph(params=null){
         let keys = Object.keys(row);
         let values = Object.values(row);
 
+        let avgs = {};
+
         let max = -Infinity;
         let top_sentiment = null;
 
         for(let i=0; i<keys.length; i++){
             if(keys[i].startsWith("LIWC_")){
-                if(values[i] > max){
-                    max = values[i];
-                    top_sentiment = keys[i];
+                if(!(keys[i] in avgs)){
+                    avgs[keys[i]] = [];
+                }
+                avgs[keys[i]].push(values[i])
+            }
+        }
+
+        for(let sent in avgs){
+            let total = avgs[sent].reduce((a, b) => a + b, 0)
+            if(avgs[sent].length > 0){
+                let avg = total / avgs[sent].length;
+                if(avg > max){
+                    max = avg;
+                    top_sentiment = sent
                 }
             }
         }
+
         let color = "grey";
         if(top_sentiment != null){
             color = sentiment_colors[top_sentiment.replace("LIWC_", "").toLowerCase()]
@@ -243,7 +280,6 @@ function updateGraph(params=null){
 
 function selectGraph(params){
     console.log(`Selecting ${params.data[0]}`)
-    console.log(params);
 
     document.networkGraph.dispatchAction({
         action: "select",
@@ -298,6 +334,13 @@ function createLinkBar(){
     document.linkChart.setOption(option);
     document.linkChart.on("click", "series", updateSentimentBar);
     document.linkChart.on("click", "series", selectGraph);
+
+    document.linkChart.on("mouseover", "series", function (params) {
+        document.networkGraph.dispatchAction({
+            type: "highlight",
+            name: params.name
+        })
+    })
 }
 
 function updateLinkBar(params){
@@ -393,7 +436,15 @@ function createSentimentBar(){
     };
     document.sentimentChart.setOption(option);
 
-    document.sentimentChart.on('click', "series", updateGraph)
+    document.sentimentChart.on('click', "series", updateGraph);
+
+    document.sentimentChart.on("mouseover", "series", function (params) {
+        console.log(params);
+        document.networkGraph.dispatchAction({
+            type: "highlight",
+            name: params.value[2][0]
+        })
+    })
 }
 function updateSentimentBar(params){
     let source = "";
@@ -461,6 +512,16 @@ function updateSentimentBar(params){
 
         //data.push([sentiment, avg, [source, target]])
     }
+
+    // Sort data
+
+    let compare = function(a, b){
+        if(a.value[1] > b.value[1]) return -1;
+        else if(a.value[1] < b.value[1]) return 1;
+        else return 0;
+    }
+
+    data = data.sort(compare);
 
     let option = document.sentimentChart.getOption();
 
